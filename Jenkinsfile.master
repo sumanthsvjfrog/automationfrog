@@ -1,78 +1,135 @@
-// FROGBOT-STATE-CLEANER Pipeline Script (Secure Cleanup Job)
+// FROGBOT-MASTER-SCHEDULER Pipeline Script (Finalized)
 
 pipeline {
-    agent any // Use any available agent
+    agent any
     tools { 
-        jfrog 'psblr' // Declares the jfrog CLI tool
+        jfrog 'psblr'
     }
 
     triggers {
-        // Runs once a day at 00:00 UTC (Midnight)
-        cron('0 0 * * *') 
+        cron('0 0 * * *')
     }
 
     environment {
-        SERVER_ID = 'psblr1' // Ensure this matches the ID you want to use
-        JFROG_REPO = 'frogbot-state'
-        JFROG_STATE_PREFIX = 'state/repo-status/'
-        TTL_HOURS = 24 
+        // --- Configuration ---
+        GITHUB_OWNER = 'sumanthsvjfrog' 
+        GITHUB_API_URL = "https://api.github.com/users/${GITHUB_OWNER}/repos?per_page=100"
         
-        // Credentials defined via Jenkins secrets (IDs must be created in Manage Jenkins)
-        // JF_URL is often stored as the token itself, but we need the URL here.
-        // We will assume JF_URL_CREDENTIAL_ID holds the Artifactory base URL.
-        JF_URL_CREDENTIAL_ID = 'JF_URL' 
-        JF_ACCESS_TOKEN_ID = 'JF_ACCESS_TOKEN'
-        
-        // Script Repository
-        CLEANUP_REPO_URL = 'https://github.com/sumanthsvjfrog/automationfrog.git'
-        CLEANUP_SCRIPT_NAME = 'reset_status.sh'
+        // --- Artifacts & State ---
+        REPO_LIST_FILE = 'all_repos.txt'
+        JFROG_REPO = 'frogbot-state' 
+        JFROG_STATE_PREFIX = 'state/repo-status/' 
     }
 
     stages {
-        stage('1. Checkout Script and Execute Cleanup') {
+        stage('1. Generate Repository List') {
             steps {
                 script {
-                    echo "Checking out cleanup script repository: ${env.CLEANUP_REPO_URL}"
-                    
-                    // --- STEP 1: CHECKOUT THE SCRIPT REPOSITORY ---
-                    checkout([
-                        $class: 'GitSCM', 
-                        branches: [[name: 'main']], 
-                        userRemoteConfigs: [[url: env.CLEANUP_REPO_URL]],
-                    ])
-
-                    // --- STEP 2: SECURELY CONFIGURE JFROG CLI ---
-                    echo "1. Configuring JFrog CLI server ID: ${env.SERVER_ID}."
-                    
-                    // Securely bind the URL and Access Token from Jenkins Credentials Manager
-                    withCredentials([
-                        string(credentialsId: env.JF_ACCESS_TOKEN_ID, variable: 'ACCESS_TOKEN'),
-                        string(credentialsId: env.JF_URL_CREDENTIAL_ID, variable: 'JF_PLATFORM_URL')
-                    ]) {
-                        // Use sh command to execute configuration, passing variables via the shell env
+                    echo "Starting in-pipeline repository list generation from GitHub..."
+                    withCredentials([string(credentialsId: 'JF_GIT_TOKEN', variable: 'GIT_PAT')]) {
                         sh """
-                        echo "2. Adding server config..."
-                        # The Artifactory URL is required for the 'c add' command
-                        /usr/local/bin/jf c add ${env.SERVER_ID} \\
-                          --url=\${JF_PLATFORM_URL} \\
-                          --artifactory-url=\${JF_PLATFORM_URL}/artifactory \\
-                          --access-token=\${ACCESS_TOKEN} \\
-                          --overwrite=true
-                         /usr/local/bin/jf c use ${env.SERVER_ID}
+                        > ${env.REPO_LIST_FILE}
+                        PAGE=1
+                        while true; do
+                          URL="${env.GITHUB_API_URL}&page=\$PAGE"
+                          JSON_RESPONSE=\$(curl -s -u '${env.GITHUB_OWNER}:\$GIT_PAT' "\$URL")
+                          
+                          if [ "\$(echo "\$JSON_RESPONSE" | jq 'length')" -eq 0 ]; then
+                            break
+                          fi
+                            
+                          echo "\$JSON_RESPONSE" | jq -r '.[] | .full_name' >> ${env.REPO_LIST_FILE}
+                            
+                          PAGE=\$((PAGE + 1))
+                        done
+                        echo "Total repositories found: \$(wc -l < ${env.REPO_LIST_FILE})"
                         """
-                         
                     }
-                    
-                    // Use the newly configured server (Jfrog CLI step)
-                    
-                    
-                    // --- STEP 3: Execute the script ---
-                    echo "Starting state cleanup for repos older than ${env.TTL_HOURS} hours."
-                    sh "chmod +x ${env.CLEANUP_SCRIPT_NAME}" 
-                    
-                    // Execute the script. Variables are made available via the Groovy environment block.
-                    sh "./${env.CLEANUP_SCRIPT_NAME}"
+                    archiveArtifacts artifacts: env.REPO_LIST_FILE, fingerprint: true
                 }
+            }
+        }
+
+        stage('2. Load State and Trigger Scans') {
+            steps {
+                    script {
+                        def jobsToMonitor = []
+                        def repoLines = readFile(env.REPO_LIST_FILE).trim().split('\\r?\\n')  
+
+                        for (repoPathFull in repoLines) {
+                            def repoPath = repoPathFull.trim()
+                            if (repoPath == '') continue
+                            
+                            def uniqueStateFileName = "${repoPath.replace('/', '-')}.txt"
+                            def uniqueStateFilePath = "${env.JFROG_STATE_PREFIX}${uniqueStateFileName}"
+                            
+                            def scanStatus = 'NEW'
+                            def lastScannedCommit = ''
+                            def currentLatestCommit = ''
+                            
+                            // 1. Get the current latest commit ID for comparison
+                            try {
+                               currentLatestCommit = sh(returnStdout: true, script: "git ls-remote https://github.com/${repoPath}.git HEAD | awk '{print \$1}'").trim()
+                            } catch (e) {
+                               echo "⚠️ WARNING: Failed to get latest commit for ${repoPath}. Skipping comparison."
+                               currentLatestCommit = 'UNKNOWN'
+                            }
+                            
+                            // 2. Try to download and read the unique state file
+                            try {
+                                jf "rt dl ${env.JFROG_REPO}/${uniqueStateFilePath} ${uniqueStateFileName} --flat"
+                                
+                                def stateContent = readFile(uniqueStateFileName).trim()
+                                def statusParts = stateContent.split(',')
+                                
+                                if (statusParts.size() >= 3) {
+                                    lastScannedCommit = statusParts[1].trim()
+                                    scanStatus = statusParts[2].trim()
+                                }
+                                sh "rm ${uniqueStateFileName}" 
+                                
+                            } catch (err) {
+                                scanStatus = 'NEW'
+                            }
+                            
+                            // --- Decision Logic ---
+                            def shouldScan = false
+                            
+                            if (scanStatus == 'NEW') {
+                                shouldScan = true
+                                echo "✅ Scan required for ${repoPath}. Reason: NEW repository."
+                            } else if (scanStatus == 'inprogress') {
+                                shouldScan = false 
+                                echo "⏳ Skipping scan for ${repoPath}. Reason: Already marked as 'inprogress' by another job."
+                            } else if (scanStatus != 'completed') {
+                                shouldScan = true
+                                echo "✅ Scan required for ${repoPath}. Reason: Previous status was '${scanStatus}' (requires retry)."
+                            } else if (lastScannedCommit != currentLatestCommit && currentLatestCommit != 'UNKNOWN') {
+                                shouldScan = true
+                                echo "✅ Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
+                            } 
+                            //else {
+                             //   shouldScan = true
+                             //   echo "⏭️ Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
+                            //}
+
+                            if (shouldScan) {
+                                def triggeredJob = build job: 'New_scanner', 
+                                    parameters: [
+                                        string(name: 'REPO_PATH', value: repoPath) // Only sending REPO_PATH
+                                    ],
+                                    wait: false
+
+                                if (triggeredJob != null) {
+                                    jobsToMonitor.add(triggeredJob)
+                                }
+                            }
+                        }
+                        
+                        // --- Monitoring (Wait for all triggered jobs) ---
+                        echo "Waiting for all ${jobsToMonitor.size()} scan jobs to complete..."
+                        // Add comprehensive wait and error checking logic here
+                    }
             }
         }
     }
