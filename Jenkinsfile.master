@@ -107,11 +107,10 @@ pipeline {
                             } else if (lastScannedCommit != currentLatestCommit && currentLatestCommit != 'UNKNOWN') {
                                 shouldScan = true
                                 echo "✅ Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
-                            } 
-                            //else {
-                             //   shouldScan = true
-                             //   echo "⏭️ Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
-                            //}
+                            } else {
+                                shouldScan = false
+                                echo "⏭️ Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
+                            }
 
                             if (shouldScan) {
                                 def triggeredJob = build job: 'New_scanner', 
