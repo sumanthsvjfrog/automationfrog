@@ -43,7 +43,7 @@ for file in ${LOCAL_DIR}/*.txt; do
 
     echo "Age: ${age_hours} hours"
 
-    if [ $age_hours -gt 1 ]; then
+    if [ $age_hours -ge 0 ]; then
         echo "More than 24 hours old — resetting status."
 
         echo "${repoPath},${lastCommit},resetted,${fileTs}" > "$file"
