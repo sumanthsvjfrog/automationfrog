@@ -26,10 +26,10 @@ for file in ${LOCAL_DIR}/*.txt; do
     echo "status $status"
     echo "fileTs $fileTs"
 
-    #if [ "$status" == "completed" ]; then
+    if [ "$status" == "completed" ]; then
         echo "✔ Completed — no reset needed."
-       # continue
-
+        continue
+    fi
     # Clean the timestamp: remove Z and add UTC
     file_epoch=$(date -u -d "$fileTs" +%s 2>/dev/null)
 
@@ -43,7 +43,7 @@ for file in ${LOCAL_DIR}/*.txt; do
 
     echo "Age: ${age_hours} hours"
 
-    if [ $age_hours -ge 0 ]; then
+    if [ $age_hours -ge 24 ]; then
         echo "More than 24 hours old — resetting status."
 
         echo "${repoPath},${lastCommit},resetted,${fileTs}" > "$file"
@@ -51,6 +51,4 @@ for file in ${LOCAL_DIR}/*.txt; do
     else
         echo "Recent — no reset required."
     fi
-    #fi
-
 done
