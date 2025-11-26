@@ -9,11 +9,16 @@ pipeline {
     triggers {
         cron('0 0 * * *')
     }
-
+    parameters {
+        string(
+            name: 'GITHUB_OWNER', 
+            defaultValue: 'sumanthsvjfrog',
+            description: 'GitHub organization or user account to scan.'
+        )
+    }
     environment {
         // --- Configuration ---
-        GITHUB_OWNER = 'sumanthsvjfrog' 
-        GITHUB_API_URL = "https://api.github.com/users/${GITHUB_OWNER}/repos?per_page=100"
+        GITHUB_API_URL = "https://api.github.com/users/${params.GITHUB_OWNER}/repos?per_page=100"
         
         // --- Artifacts & State ---
         REPO_LIST_FILE = 'all_repos.txt'
@@ -25,14 +30,14 @@ pipeline {
         stage('1. Generate Repository List') {
             steps {
                 script {
-                    echo "Starting in-pipeline repository list generation from GitHub..."
+                    echo "Starting in-pipeline repository list generation from GitHub (Owner: ${params.GITHUB_OWNER})..."
                     withCredentials([string(credentialsId: 'JF_GIT_TOKEN', variable: 'GIT_PAT')]) {
                         sh """
                         > ${env.REPO_LIST_FILE}
                         PAGE=1
                         while true; do
                           URL="${env.GITHUB_API_URL}&page=\$PAGE"
-                          JSON_RESPONSE=\$(curl -s -u '${env.GITHUB_OWNER}:\$GIT_PAT' "\$URL")
+                          JSON_RESPONSE=\$(curl -s -u '${params.GITHUB_OWNER}:\$GIT_PAT' "\$URL")
                           
                           if [ "\$(echo "\$JSON_RESPONSE" | jq 'length')" -eq 0 ]; then
                             break
