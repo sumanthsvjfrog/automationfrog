@@ -1,0 +1,158 @@
+// FROGBOT-REPO-SCANNER Pipeline Script (Final, Robust State Management)
+
+pipeline {
+    agent { label 'ubuntu' } 
+    tools { 
+        jfrog 'psblr' // Declares the jfrog CLI tool
+    }
+
+    parameters {
+        string(name: 'REPO_PATH', description: 'Repository full name (owner/repo)')
+    }
+
+    environment {
+        // --- JFrog State Configuration ---
+        JFROG_REPO = 'frogbot-state'
+        JFROG_STATE_PREFIX = 'state/repo-status/' 
+        
+        // --- Frogbot Configuration (Credentials MUST match Jenkins IDs) ---
+        JF_GIT_PROVIDER = "github"
+        JF_GIT_BASE_BRANCH = "main"
+        JF_URL = credentials("JF_URL")
+        JF_ACCESS_TOKEN = credentials("JF_ACCESS_TOKEN")
+        JF_GIT_TOKEN = credentials("JF_GIT_TOKEN")
+        FROGBOT_VERSION = '2.29.1' 
+        
+        // --- Dynamic Variables ---
+        UNIQUE_STATE_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}.txt"
+        UNIQUE_STATE_FILE_PATH = "${env.JFROG_STATE_PREFIX}${env.UNIQUE_STATE_FILE_NAME}"
+        RESULTS_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}-results.log"
+        RESULTS_FILE_PATH = "results/${env.RESULTS_FILE_NAME}"
+    }
+
+    stages {
+        stage('Initialize State and Scan') {
+            steps {
+                 ws("workspace/New_scanner_${env.BUILD_NUMBER}") {
+                    script {
+                        // ==== Your existing script logic stays here unchanged ====
+                        def repoUrl = "https://github.com/${params.REPO_PATH}.git"
+                        def (owner, repoName) = params.REPO_PATH.split('/')
+
+                        env.JF_GIT_OWNER = owner
+                        env.JF_GIT_REPO = repoName
+
+                        env.LAST_GIT_COMMIT = sh(
+                             script: "git ls-remote ${repoUrl} HEAD | cut -f1",
+                             returnStdout: true
+                        ).trim()
+                        
+                        env.NOW = sh(
+                            script: "date -u +\"%Y-%m-%dT%H:%M:%SZ\"",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Latest remote commit ID is: ${env.LAST_GIT_COMMIT}"
+
+                        sh """
+                        echo "${params.REPO_PATH},${env.LAST_GIT_COMMIT},inprogress,${now}" > ${env.UNIQUE_STATE_FILE_NAME}
+                        """
+                        jf "rt u ${env.UNIQUE_STATE_FILE_NAME} ${env.JFROG_REPO}/${env.UNIQUE_STATE_FILE_PATH} --flat"
+
+                        // Install Frogbot if needed
+                        sh """
+                        if command -v frogbot >/dev/null 2>&1; then
+                            echo "Frogbot already installed."
+                        else
+                            echo "Installing Frogbot v${env.FROGBOT_VERSION}..."
+                            curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/${env.FROGBOT_VERSION}/getFrogbot.sh" | sh -s -- -y
+                            sudo cp frogbot /usr/bin
+                        fi
+                        """
+
+                        sh """
+                            echo "--- Scan started at ${now} ---" > ${env.RESULTS_FILE_NAME}
+                            frogbot scan-repository 2>&1 | tee -a ${env.RESULTS_FILE_NAME}
+                        """
+                    }
+                }
+            }
+        }  
+    }
+    
+    // --- POST ACTIONS FOR STATE MANAGEMENT AND ARTIFACT ARCHIVAL ---
+    post {
+        // 1. On successful completion of ALL stages
+        success {
+            ws("workspace/New_scanner_${env.BUILD_NUMBER}") {
+            script {
+                echo "Scan succeeded. Updating state to 'completed' and archiving results."
+                
+                // --- A. Upload Results Artifact (Split Syntax) ---
+                sh """
+                echo "Archived detailed results to ${env.RESULTS_FILE_PATH}"
+                """
+                jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                
+                // --- B. Update State File (Split Syntax) ---
+                sh """
+                echo "${params.REPO_PATH},${env.LAST_GIT_COMMIT},completed,${env.NOW}" > ${env.UNIQUE_STATE_FILE_NAME}
+                """
+                jf "rt u ${env.UNIQUE_STATE_FILE_NAME} ${env.JFROG_REPO}/${env.UNIQUE_STATE_FILE_PATH} --flat"
+            }
+            }
+        }
+        
+        // 2. On any failure (catches 'FAILURE', 'UNSTABLE', etc.)
+        failure {
+            ws("workspace/New_scanner_${env.BUILD_NUMBER}") {
+            script {
+                def commitToLog = env.LAST_GIT_COMMIT ?: "UNKNOWN_FAILURE"
+                echo "Scan FAILED. Updating state to 'failed' with Commit ID: ${commitToLog}."
+
+                // --- A. Safely Upload Results Artifact on Failure ---
+                if (fileExists(env.RESULTS_FILE_NAME)) { 
+                    sh """
+                    echo "Archived failure log to ${env.RESULTS_FILE_PATH}"
+                    """
+                    jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                } else {
+                    echo "⚠️ WARNING: Results log file was not created; skipping upload."
+                }
+                
+                // --- B. Write 'failed' state to JFrog (Split Syntax) ---
+                sh """
+                echo "${params.REPO_PATH},${commitToLog},failed,${env.NOW}" > ${env.UNIQUE_STATE_FILE_NAME}
+                """
+                jf "rt u ${env.UNIQUE_STATE_FILE_NAME} ${env.JFROG_REPO}/${env.UNIQUE_STATE_FILE_PATH} --flat"
+            }
+        }
+        }
+        
+        // 3. For aborted outcomes
+        aborted {
+            ws("workspace/New_scanner_${env.BUILD_NUMBER}") {
+             script {
+                def commitToLog = env.LAST_GIT_COMMIT ?: "UNKNOWN_FAILURE"
+                echo "Scan ABORTED. Updating state to 'failed'."
+
+                // --- A. Safely Upload Results Artifact on Abort ---
+                if (fileExists(env.RESULTS_FILE_NAME)) { 
+                    sh """
+                    echo "Archived aborted log to ${env.RESULTS_FILE_PATH}"
+                    """
+                    jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                } else {
+                    echo "⚠️ WARNING: Results log file was not created; skipping upload."
+                }
+                
+                // --- B. Write 'failed' state to JFrog (Split Syntax) ---
+                sh """
+                echo "${params.REPO_PATH},${commitToLog},failed,${env.NOW}" > ${env.UNIQUE_STATE_FILE_NAME}
+                """
+                jf "rt u ${env.UNIQUE_STATE_FILE_NAME} ${env.JFROG_REPO}/${env.UNIQUE_STATE_FILE_PATH} --flat"
+            }
+            }
+        }
+    }
+}
