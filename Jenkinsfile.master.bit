@@ -38,6 +38,20 @@ pipeline {
         stage('1. Generate Repository List') {
             steps {
                 script {
+            def projectKey = params.BITBUCKET_PROJECT_KEY
+            def apiEndpoint
+            
+            // --- 1. DETERMINE API ENDPOINT ---
+            if (projectKey == '*') {
+                echo "Scanning ALL accessible repositories across all projects."
+                // API for listing all repositories accessible by the user (across all projects)
+                apiEndpoint = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/repos"
+                echo "apiEndpoint $apiEndpoint"
+            } else {
+                echo "Scanning repositories within Project Key: ${projectKey}"
+                // API for listing repositories in a specific project
+                apiEndpoint = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${projectKey}/repos"
+            }
                     echo "Starting repository list generation from Bitbucket (Workspace: ${params.BITBUCKET_WORKSPACE})..."
                     withCredentials([string(credentialsId: 'JF_BIT_TOKEN', variable: 'GIT_PAT')]) {
                         sh """
@@ -46,7 +60,8 @@ pipeline {
                         # Bitbucket API typically returns all results in one large response 
                         # up to 100 entries, so we simplify the pagination loop.
                         
-                        URL="${env.GITHUB_API_URL}"
+                        URL="${apiEndpoint}"
+                        echo "URL $URL"
                         
                         # Authentication: Use Basic Auth with Username (or Email) and App Password
                         # Note: The username/email used for auth may differ from the workspace slug.
