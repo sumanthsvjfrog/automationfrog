@@ -70,7 +70,7 @@ pipeline {
                         // Install Frogbot if needed
                         sh """
                         FROGBOT_BIN="/usr/bin/frogbot"
-                        FROGBOT_BIN="/usr/bin/frogbot"
+                        REQUIRED_VERSION="${FROGBOT_VERSION}"
                         install=no
                         # Check if Frogbot is installed
                         if [ -x "\$FROGBOT_BIN" ]; then
