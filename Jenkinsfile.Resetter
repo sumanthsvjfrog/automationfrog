@@ -1,7 +1,7 @@
-// FROGBOT-STATE-CLEANER Pipeline Script (Secure Cleanup Job)
+// FROGBOT-STATE-CLEANER Pipeline Script
 
 pipeline {
-    agent any // Use any available agent
+    agent any
     tools { 
         jfrog 'psblr' // Declares the jfrog CLI tool
     }
@@ -12,38 +12,28 @@ pipeline {
     }
 
     environment {
-        SERVER_ID = 'psblr1' // Ensure this matches the ID you want to use
+        SERVER_ID = 'psblr1'
         JFROG_REPO = 'frogbot-state'
         JFROG_STATE_PREFIX = 'state/repo-status/'
-        TTL_HOURS = 24 
-        
-        // Credentials defined via Jenkins secrets (IDs must be created in Manage Jenkins)
-        // JF_URL is often stored as the token itself, but we need the URL here.
-        // We will assume JF_URL_CREDENTIAL_ID holds the Artifactory base URL.
         JF_URL_CREDENTIAL_ID = 'JF_URL' 
         JF_ACCESS_TOKEN_ID = 'JF_ACCESS_TOKEN'
-        
-        // Script Repository
-        CLEANUP_REPO_URL = 'https://github.com/sumanthsvjfrog/automationfrog.git'
         CLEANUP_SCRIPT_NAME = 'reset_status.sh'
     }
 
     stages {
-        stage('1. Checkout Script and Execute Cleanup') {
+        stage('Checkout Script and Execute Cleanup') {
             steps {
                 script {
-                    // --- STEP 1: SECURELY CONFIGURE JFROG CLI ---
-                    echo "1. Configuring JFrog CLI server ID: ${env.SERVER_ID}."
+                    // --- CONFIGURE JFROG CLI ---
+                    echo "Configuring JFrog CLI server ID: ${env.SERVER_ID}."
                     
-                    // Securely bind the URL and Access Token from Jenkins Credentials Manager
                     withCredentials([
                         string(credentialsId: env.JF_ACCESS_TOKEN_ID, variable: 'ACCESS_TOKEN'),
                         string(credentialsId: env.JF_URL_CREDENTIAL_ID, variable: 'JF_PLATFORM_URL')
                     ]) {
                         // Use sh command to execute configuration, passing variables via the shell env
                         sh """
-                        echo "2. Adding server config..."
-                        # The Artifactory URL is required for the 'c add' command
+                        echo "Adding jf cli server config..."
                         /usr/local/bin/jf c add ${env.SERVER_ID} \\
                           --url=\${JF_PLATFORM_URL} \\
                           --artifactory-url=\${JF_PLATFORM_URL}/artifactory \\
@@ -54,11 +44,10 @@ pipeline {
                          
                     }
                     
-                    // --- STEP 2: Execute the script ---
-                    echo "Starting state cleanup for repos older than ${env.TTL_HOURS} hours."
+                    // --- Executing the script ---
+                    echo "Starting status resetter script ."
                     sh "chmod +x ${env.CLEANUP_SCRIPT_NAME}" 
-                    
-                    // Execute the script. Variables are made available via the Groovy environment block.
+
                     sh "./${env.CLEANUP_SCRIPT_NAME}"
                 }
             }
