@@ -17,7 +17,6 @@ pipeline {
         )
     }
     environment {
-        // --- Configuration ---
         GITHUB_API_URL = "https://api.github.com/users/${params.GITHUB_OWNER}/repos?per_page=100"
         
         // --- Artifacts & State ---
@@ -72,15 +71,15 @@ pipeline {
                             def lastScannedCommit = ''
                             def currentLatestCommit = ''
                             
-                            // 1. Get the current latest commit ID for comparison
+                            // Get the current latest commit ID for comparison
                             try {
                                currentLatestCommit = sh(returnStdout: true, script: "git ls-remote https://github.com/${repoPath}.git HEAD | awk '{print \$1}'").trim()
                             } catch (e) {
-                               echo "⚠️ WARNING: Failed to get latest commit for ${repoPath}. Skipping comparison."
+                               echo "WARNING: Failed to get latest commit for ${repoPath}. Skipping comparison."
                                currentLatestCommit = 'UNKNOWN'
                             }
                             
-                            // 2. Try to download and read the unique state file
+                            // Try to download and read the unique state file
                             try {
                                 jf "rt dl ${env.JFROG_REPO}/${uniqueStateFilePath} ${uniqueStateFileName} --flat"
                                 
@@ -97,30 +96,30 @@ pipeline {
                                 scanStatus = 'NEW'
                             }
                             
-                            // --- Decision Logic ---
+                            // --- Define Logic ---
                             def shouldScan = false
                             
                             if (scanStatus == 'NEW') {
                                 shouldScan = true
-                                echo "✅ Scan required for ${repoPath}. Reason: NEW repository."
+                                echo "Scan required for ${repoPath}. Reason: NEW repository."
                             } else if (scanStatus == 'inprogress') {
                                 shouldScan = false 
-                                echo "⏳ Skipping scan for ${repoPath}. Reason: Already marked as 'inprogress' by another job."
+                                echo "Skipping scan for ${repoPath}. Reason: Already marked as 'inprogress' by another job."
                             } else if (scanStatus != 'completed') {
                                 shouldScan = true
-                                echo "✅ Scan required for ${repoPath}. Reason: Previous status was '${scanStatus}' (requires retry)."
+                                echo "Scan required for ${repoPath}. Reason: Previous status was '${scanStatus}' (requires retry)."
                             } else if (lastScannedCommit != currentLatestCommit && currentLatestCommit != 'UNKNOWN') {
                                 shouldScan = true
-                                echo "✅ Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
+                                echo "Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
                             } else {
                                 shouldScan = false
-                                echo "⏭️ Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
+                                echo "Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
                             }
 
                             if (shouldScan) {
                                 def triggeredJob = build job: 'New_scanner', 
                                     parameters: [
-                                        string(name: 'REPO_PATH', value: repoPath) // Only sending REPO_PATH
+                                        string(name: 'REPO_PATH', value: repoPath)
                                     ],
                                     wait: false
 
@@ -130,9 +129,8 @@ pipeline {
                             }
                         }
                         
-                        // --- Monitoring (Wait for all triggered jobs) ---
+
                         echo "Waiting for all ${jobsToMonitor.size()} scan jobs to complete..."
-                        // Add comprehensive wait and error checking logic here
                     }
             }
         }
