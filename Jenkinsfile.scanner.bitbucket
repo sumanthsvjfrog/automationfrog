@@ -71,7 +71,7 @@ pipeline {
                         sh """
                         FROGBOT_BIN="/usr/bin/frogbot"
                         REQUIRED_VERSION="${FROGBOT_VERSION}"
-                        install=no
+                        installfrog=no
                         # Check if Frogbot is installed
                         if [ -x "\$FROGBOT_BIN" ]; then
                             INSTALLED_VERSION="\$(\$FROGBOT_BIN --version 2>/dev/null | awk '{print \$NF}')"
@@ -79,15 +79,15 @@ pipeline {
                             # Check version mismatches
                             if [ "\$INSTALLED_VERSION" = "\$REQUIRED_VERSION" ]; then
                                 echo "Frogbot version matches (\$REQUIRED_VERSION). No installation needed"
-                                install=no
+                                installfrog=no
                             else
                                 echo "Version mismatch! Installed: \$INSTALLED_VERSION, Required: \$REQUIRED_VERSION"
-                                install=yes
+                                installfrog=yes
                             fi
                         else
-                            install=yes
+                            installfrog=yes
                         fi
-                        if [ $install = yes ];then
+                        if [ \$installfrog = yes ];then
                             echo "skipp"
                             #curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/\${env.FROGBOT_VERSION}/getFrogbot.sh" | sh
                             #chmod +x frogbot
