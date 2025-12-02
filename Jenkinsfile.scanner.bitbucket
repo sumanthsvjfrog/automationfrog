@@ -8,6 +8,9 @@ pipeline {
 
     parameters {
         string(name: 'REPO_PATH', description: 'Repository full name (owner/repo)')
+        string(name: 'BITBUCKET_SERVER_URL', description: 'Base URL for Bitbucket Server/Data Center.')
+        string(name: 'GIT_BRANCH', description: 'The branch to clone and scan.')
+        string(name: 'FROGBOT_VERSION', description: 'The Frogbot CLI version to install and run.')
     }
 
     environment {
@@ -17,14 +20,14 @@ pipeline {
         
         // --- Frogbot Configuration (Credentials MUST match Jenkins IDs) ---
         JF_GIT_PROVIDER = "bitbucketServer"
-        JF_GIT_BASE_BRANCH = "main"
+        JF_GIT_BASE_BRANCH = "${params.GIT_BRANCH}"
         JF_URL = credentials("JF_URL")
         JF_ACCESS_TOKEN = credentials("JF_ACCESS_TOKEN")
         JF_GIT_TOKEN = credentials("JF_BIT_TOKEN")
-        JF_GIT_API_ENDPOINT = "http://172.18.107.112:7990/rest"
-        JF_BITBUCKETSERVER_URL = "http://172.18.107.112:7990"
-        JF_GIT_USERNAME = "sumanth"
-        FROGBOT_VERSION = '2.29.1' 
+        JF_GIT_API_ENDPOINT = "${params.BITBUCKET_SERVER_URL}/rest"
+        JF_BITBUCKETSERVER_URL = "${params.BITBUCKET_SERVER_URL}"
+        JF_GIT_USERNAME = credentials("JF_BIT_USER")
+        FROGBOT_VERSION = "${params.FROGBOT_VERSION}"
         
         // --- Dynamic Variables ---
         UNIQUE_STATE_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}.txt"
