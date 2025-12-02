@@ -69,30 +69,13 @@ pipeline {
 
                         // Install Frogbot if needed
                         sh """
-                        FROGBOT_BIN="/usr/bin/frogbot"
-                        REQUIRED_VERSION="${FROGBOT_VERSION}"
-                        installfrog=no
-                        # Check if Frogbot is installed
-                        if [ -x "\$FROGBOT_BIN" ]; then
-                            INSTALLED_VERSION="\$(\$FROGBOT_BIN --version 2>/dev/null | awk '{print \$NF}')"
-                            echo "Frogbot found: version \${INSTALLED_VERSION}"
-                            # Check version mismatches
-                            if [ "\$INSTALLED_VERSION" = "\$REQUIRED_VERSION" ]; then
-                                echo "Frogbot version matches (\$REQUIRED_VERSION). No installation needed"
-                                installfrog=no
-                            else
-                                echo "Version mismatch! Installed: \$INSTALLED_VERSION, Required: \$REQUIRED_VERSION"
-                                installfrog=yes
-                            fi
+                        if command -v frogbot >/dev/null 2>&1; then
+                            echo "Frogbot already installed."
                         else
-                            installfrog=yes
-                        fi
-                        if [ \$installfrog = yes ];then
-                            echo "skipp"
-                            #curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/\${env.FROGBOT_VERSION}/getFrogbot.sh" | sh
-                            #chmod +x frogbot
-                            #sudo mv -f frogbot /usr/bin/frogbot
-                            #echo "Frogbot v\${REQUIRED_VERSION} installed successfully."
+                            echo "Installing Frogbot v${env.FROGBOT_VERSION}..."
+                            curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/${env.FROGBOT_VERSION}/getFrogbot.sh" | sh
+                            chmod +x frogbot
+                            sudo cp frogbot /usr/bin
                         fi
                         """
 
