@@ -24,8 +24,6 @@ pipeline {
     }
 
     environment {
-        // --- Configuration ---
-        // Change the API URL to the Bitbucket Workspace Repositories endpoint.
         GITHUB_API_URL = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${params.BITBUCKET_PROJECT_KEY}/repos"
         
         // --- Artifacts & State ---
@@ -38,38 +36,25 @@ pipeline {
         stage('1. Generate Repository List') {
             steps {
                 script {
-            def projectKey = params.BITBUCKET_PROJECT_KEY
-            def apiEndpoint
+                def projectKey = params.BITBUCKET_PROJECT_KEY
+                def apiEndpoint
             
-            // --- 1. DETERMINE API ENDPOINT ---
+            // --- DETERMINE API ENDPOINT ---
             if (projectKey == '*') {
-                echo "Scanning ALL accessible repositories across all projects."
-                // API for listing all repositories accessible by the user (across all projects)
+                echo "Fetching All repositories across all projects."
                 apiEndpoint = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/repos"
-                echo "apiEndpoint $apiEndpoint"
             } else {
-                echo "Scanning repositories within Project Key: ${projectKey}"
-                // API for listing repositories in a specific project
+                echo "Fetching repositories within Project Key: ${projectKey}"
                 apiEndpoint = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${projectKey}/repos"
             }
-                    echo "Starting repository list generation from Bitbucket (Workspace: ${params.BITBUCKET_WORKSPACE})..."
+                    echo "Starting repository list generation from Bitbucket..."
                     withCredentials([string(credentialsId: 'JF_BIT_TOKEN', variable: 'GIT_PAT')]) {
                         sh """
-                        > ${env.REPO_LIST_FILE}
-                        
-                        # Bitbucket API typically returns all results in one large response 
-                        # up to 100 entries, so we simplify the pagination loop.
-                        
+                        > ${env.REPO_LIST_FILE}           
                         URL="${apiEndpoint}"
-                        echo "URL $URL"
-                        
-                        # Authentication: Use Basic Auth with Username (or Email) and App Password
-                        # Note: The username/email used for auth may differ from the workspace slug.
+
                         JSON_RESPONSE=\$(curl -s -u "sumanth:\$GIT_PAT" "\$URL")
-                        # Extraction: Bitbucket stores repos under the 'values' array. 
-                        # The 'full_name' field (e.g., sumwork1/nugetrepo1) is what we need.
-                        echo "\$JSON_RESPONSE" | /usr/bin/jq -r '.values[] | .project.key + "/" + .slug' >> ${env.REPO_LIST_FILE}
-                        
+                        echo "\$JSON_RESPONSE" | /usr/bin/jq -r '.values[] | .project.key + "/" + .slug' >> ${env.REPO_LIST_FILE}                        
                         echo "Total repositories found: \$(wc -l < ${env.REPO_LIST_FILE})"
                         """
                     }
@@ -102,30 +87,24 @@ pipeline {
                         uniqueStateFileName = "${repoPath.replace('/', '-')}.txt"
                         uniqueStateFilePath = "${env.JFROG_STATE_PREFIX}${uniqueStateFileName}"
                         
-                        // --- 1. Get Current Commit (Crucial Change for Bitbucket) ---
-                        // Use the Bitbucket HTTPS clone URL format
+                        // --- Get Current Commit ---
                         def bitbucketRepoUrl = "${params.BITBUCKET_SERVER_URL}/scm/${repoPath}.git"
                         
-                        try {
-                           // Authenticate git ls-remote if necessary (usually via credentials binding outside this scope)
+                        try {                    
                            currentLatestCommit = sh( 
                                 script: """git -c http.extraheader="Authorization: Bearer \$BB_PAT" ls-remote ${bitbucketRepoUrl} HEAD | cut -f1""",
                                 returnStdout: true
                            ).trim()
                         } catch (e) {
-                           echo "⚠️ WARNING: Failed to get latest commit for ${repoPath}. Skipping comparison."
+                           echo "WARNING: Failed to get latest commit for ${repoPath}. Skipping comparison."
                            currentLatestCommit = 'UNKNOWN'
                         }
                         
-                        // --- 2. Download State and Decision Logic (Remains Unchanged) ---
-                        // ... (The rest of the logic remains the same, checking state and triggering the worker) ...
-                        
-                        // ... (Rest of the decision logic is unchanged) ...
+                        // --- Download State and Decision Logic ---
                         scanStatus = 'NEW'
                         lastScannedCommit = ''
                         
                         try {
-                            // Using the stable, unique file download for current status
                             jf "rt dl ${env.JFROG_REPO}/${uniqueStateFilePath} ${uniqueStateFileName} --flat=true"
                             
                             def stateContent = readFile(uniqueStateFileName).trim()
@@ -135,31 +114,31 @@ pipeline {
                                 lastScannedCommit = statusParts[1].trim()
                                 scanStatus = statusParts[2].trim()
                             }
-                            sh "rm -f ${uniqueStateFileName}" // Clean up local file
+                            sh "rm -f ${uniqueStateFileName}" 
                             
                         } catch (err) {
                             scanStatus = 'NEW'
                         }
                         
-                        // --- 4. Decision Logic ---
+                        // --- Decision Logic ---
                         def shouldScan = false
                         
                         if (scanStatus == 'NEW') {
                             shouldScan = true
-                            echo "✅ Scan required for ${repoPath}. Reason: NEW repository."
+                            echo "Scan required for ${repoPath}. Reason: NEW repository."
                         } else if (scanStatus == 'inprogress') {
-                            echo "⏳ Skipping scan for ${repoPath}. Reason: Already marked as 'inprogress'."
+                            echo "Skipping scan for ${repoPath}. Reason: Already marked as 'inprogress'."
                         } else if (scanStatus != 'completed') {
                             shouldScan = true
-                            echo "✅ Scan required for ${repoPath}. Reason: Status '${scanStatus}' (requires retry/reset scan)."
+                            echo "Scan required for ${repoPath}. Reason: Status '${scanStatus}' (requires retry/reset scan)."
                         } else if (lastScannedCommit != currentLatestCommit && currentLatestCommit != 'UNKNOWN') {
                             shouldScan = true
-                            echo "✅ Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
+                            echo "Scan required for ${repoPath}. Reason: Commit ID changed (${lastScannedCommit} -> ${currentLatestCommit})."
                         } else {
-                            echo "⏭️ Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
+                            echo "Skipping scan for ${repoPath}. Status: completed, Commit: ${currentLatestCommit}."
                         }
 
-                        // --- 5. Trigger Worker Job in Parallel ---
+                        // --- Trigger Scanner Job in Parallel ---
                         if (shouldScan) {
                             def triggeredJob = build job: 'Scanner_Bitbucket', 
                                 parameters: [
@@ -172,9 +151,7 @@ pipeline {
                             }
                         }
                     }
-                    
-                    // --- 6. Monitoring and Wait (Finalizing the Orchestration) ---
-                    echo "Waiting for all ${jobsToMonitor.size()} scan jobs to complete..."
+                    echo "Triggering of scan jobs completed..."
                 }
             }
             }
