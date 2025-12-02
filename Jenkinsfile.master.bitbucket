@@ -142,7 +142,8 @@ pipeline {
                         if (shouldScan) {
                             def triggeredJob = build job: 'Scanner_Bitbucket', 
                                 parameters: [
-                                    string(name: 'REPO_PATH', value: repoPath) 
+                                    string(name: 'REPO_PATH', value: repoPath),
+                                    string(name: 'BITBUCKET_SERVER_URL', value: params.BITBUCKET_SERVER_URL)
                                 ],
                                 wait: false 
 
