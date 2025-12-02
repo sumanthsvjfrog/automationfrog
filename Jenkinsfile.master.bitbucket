@@ -28,7 +28,7 @@ pipeline {
         )
         string(
         name: 'FROGBOT_VERSION',
-        defaultValue: '2.29.1',
+        defaultValue: '2.29.2',
         description: 'The Frogbot CLI version to install and run.'
         )
     }
