@@ -21,6 +21,16 @@ pipeline {
             defaultValue: 'DEM', 
             description: 'The Project Key (e.g., DEM) containing the repositories to scan.'
         )
+        string(
+            name: 'GIT_SCAN_BRANCH',
+            defaultValue: 'main',
+            description: 'The Git branch to scan (e.g., develop, main).'
+        )
+        string(
+        name: 'FROGBOT_VERSION',
+        defaultValue: '2.29.1',
+        description: 'The Frogbot CLI version to install and run.'
+        )
     }
 
     environment {
@@ -143,7 +153,9 @@ pipeline {
                             def triggeredJob = build job: 'Scanner_Bitbucket', 
                                 parameters: [
                                     string(name: 'REPO_PATH', value: repoPath),
-                                    string(name: 'BITBUCKET_SERVER_URL', value: params.BITBUCKET_SERVER_URL)
+                                    string(name: 'BITBUCKET_SERVER_URL', value: params.BITBUCKET_SERVER_URL),
+                                    string(name: 'GIT_BRANCH', value: params.GIT_SCAN_BRANCH),
+                                    string(name: 'FROGBOT_VERSION', value: params.FROGBOT_VERSION)
                                 ],
                                 wait: false 
 
