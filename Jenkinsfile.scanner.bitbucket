@@ -88,11 +88,10 @@ pipeline {
                             installfrog=yes
                         fi
                         if [ \$installfrog = yes ];then
-                            echo "skipp"
-                            #curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/\${env.FROGBOT_VERSION}/getFrogbot.sh" | sh
-                            #chmod +x frogbot
-                            #sudo mv -f frogbot /usr/bin/frogbot
-                            #echo "Frogbot v\${REQUIRED_VERSION} installed successfully."
+                            curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/\${env.FROGBOT_VERSION}/getFrogbot.sh" | sh
+                            chmod +x frogbot
+                            sudo mv -f frogbot /usr/bin/frogbot
+                            echo "Frogbot v\${REQUIRED_VERSION} installed successfully."
                         fi
                         """
 
