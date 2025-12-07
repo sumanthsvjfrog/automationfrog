@@ -32,8 +32,10 @@ pipeline {
         // --- Dynamic Variables ---
         UNIQUE_STATE_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}.txt"
         UNIQUE_STATE_FILE_PATH = "${env.JFROG_STATE_PREFIX}${env.UNIQUE_STATE_FILE_NAME}"
-        RESULTS_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}-results.log"
-        RESULTS_FILE_PATH = "results/${env.RESULTS_FILE_NAME}"
+        //RESULTS_FILE_NAME = "${params.REPO_PATH.replace('/', '-')}-results.log"
+        //RESULTS_FILE_PATH = "results/${env.RESULTS_FILE_NAME}"
+        RESULTS_FILE_BASE = "${params.REPO_PATH.replace('/', '-')}" 
+        RESULTS_FILE_PATH = "results/" // We'll construct the full name and path in the script block
     }
 
     stages {
@@ -61,6 +63,8 @@ pipeline {
                         ).trim()
 
                         echo "Latest remote commit ID is: ${env.LAST_GIT_COMMIT}"
+                        def shortCommitId = env.LAST_GIT_COMMIT.substring(0, 7)
+                        def finalResultsFileName = "${env.RESULTS_FILE_BASE}-${shortCommitId}.log"
 
                         sh """
                         echo "${params.REPO_PATH},${env.LAST_GIT_COMMIT},inprogress,${now}" > ${env.UNIQUE_STATE_FILE_NAME}
@@ -97,8 +101,9 @@ pipeline {
 
                         sh """
                             echo "--- Scan started at ${now} ---" > ${env.RESULTS_FILE_NAME}
-                            frogbot scan-repository 2>&1 | tee -a ${env.RESULTS_FILE_NAME}
+                            frogbot scan-repository 2>&1 | tee -a ${finalResultsFileName}
                         """
+                        env.FINAL_RESULTS_FILE_NAME = finalResultsFileName
                     }
                 }
             }
@@ -117,7 +122,7 @@ pipeline {
                 sh """
                 echo "Archived detailed results to ${env.RESULTS_FILE_PATH}"
                 """
-                jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                jf "rt u ${env.FINAL_RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH}/${env.FINAL_RESULTS_FILE_NAME} --flat"
                 
                 // ---Update State File---
                 sh """
@@ -138,7 +143,7 @@ pipeline {
                     sh """
                     echo "Archived failure log to ${env.RESULTS_FILE_PATH}"
                     """
-                    jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                    jf "rt u ${env.FINAL_RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH}/${env.FINAL_RESULTS_FILE_NAME} --flat"
                 } else {
                     echo "WARNING: Results log file was not created; skipping upload."
                 }
@@ -161,7 +166,7 @@ pipeline {
                     sh """
                     echo "Archived aborted log to ${env.RESULTS_FILE_PATH}"
                     """
-                    jf "rt u ${env.RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH} --flat"
+                    jf "rt u ${env.FINAL_RESULTS_FILE_NAME} ${env.JFROG_REPO}/${env.RESULTS_FILE_PATH}/${env.FINAL_RESULTS_FILE_NAME} --flat"
                 } else {
                     echo "WARNING: Results log file was not created; skipping upload."
                 }
