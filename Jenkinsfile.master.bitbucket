@@ -81,7 +81,6 @@ pipeline {
                     // --- Define File Paths and Variables ---
                     def repoLines = readFile(env.REPO_LIST_FILE).trim().split('\\r?\\n')
                     //sum1
-                    def scanBranch
                     def uniqueStateFileName
                     def uniqueStateFilePath
                     def currentLatestCommit
