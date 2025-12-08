@@ -182,8 +182,10 @@ pipeline {
         }
         always {
             script {
-            echo "Cleaning up workspace directory..."
-            cleanWs(deleteDirs: true) 
+                echo "Cleaning up workspace directory..."
+                dir("workspace/New_scanner_${env.BUILD_NUMBER}") {
+                deleteDir()
+            }
             }
         }
     }
