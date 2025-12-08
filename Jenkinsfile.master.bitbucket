@@ -1,4 +1,4 @@
-// FROGBOT-MASTER-SCHEDULER Pipeline Script (Bitbucket Edition)
+// FROGBOT-MASTER-SCHEDULER Pipeline Script
 
 pipeline {
     agent { label 'master' } 
@@ -21,11 +21,11 @@ pipeline {
             defaultValue: 'DEM', 
             description: 'The Project Key (e.g., DEM) containing the repositories to scan.'
         )
-        string(
-            name: 'GIT_SCAN_BRANCH',
-            defaultValue: 'main',
-            description: 'The Git branch to scan (e.g., develop, main).'
-        )
+//        string(
+//            name: 'GIT_SCAN_BRANCH',
+//            defaultValue: 'main',
+//            description: 'The Git branch to scan (e.g., develop, main).'
+//        )
         string(
         name: 'FROGBOT_VERSION',
         defaultValue: '2.29.2',
@@ -80,23 +80,58 @@ pipeline {
                     
                     // --- Define File Paths and Variables ---
                     def repoLines = readFile(env.REPO_LIST_FILE).trim().split('\\r?\\n')
+                    //sum1
+                    def scanBranch
                     def uniqueStateFileName
                     def uniqueStateFilePath
                     def currentLatestCommit
                     def lastScannedCommit
                     def scanStatus
                     withCredentials([
-                        string(credentialsId: 'JF_BIT_TOKEN', variable: 'BB_PAT') 
+                        string(credentialsId: 'JF_BIT_TOKEN', variable: 'BB_PAT'),
+                        string(credentialsId: 'JF_BIT_USER', variable: 'BB_USER')
                     ]) {
                     
                     // --- Iterate through all discovered repositories ---
                     for (repoPathFull in repoLines) {
                         def repoPath = repoPathFull.trim()
                         if (repoPath == '') continue
-                        
+
+                        //sum1
+                        def (projectKey, repoSlug) = repoPath.split('/')
                         uniqueStateFileName = "${repoPath.replace('/', '-')}.txt"
                         uniqueStateFilePath = "${env.JFROG_STATE_PREFIX}${uniqueStateFileName}"
-                        
+
+
+                        //sum1
+                        def scanBranch = 'main'
+                        def defaultBranchApiUrl = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${projectKey}/repos/${repoSlug}/branches/default"
+                        def authenticatedApiUrl = defaultBranchApiUrl.replaceFirst('://', "://${BB_USER}:${BB_PAT}@")
+                        try {
+                        // Execute CURL and JQ in a single sh block and capture the final output into Groovy
+                          def jsonResponse = sh(
+                            returnStdout: true, 
+                            script: "curl -s ${authenticatedApiUrl}"
+                            ).trim()
+    
+    // Now, run the JQ command using the captured Groovy variable and capture the final branch name
+    def defaultBranch = sh(
+        returnStdout: true,
+        script: "echo '${jsonResponse}' | /usr/bin/jq -r '.displayId'"
+    ).trim()
+
+    // Assign the cleaned branch name to the Groovy variable
+    if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
+        scanBranch = defaultBranch 
+        echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
+    } else {
+        echo "⚠️ API returned empty. Using heuristic default: ${scanBranch}"
+    }
+
+} catch (e) {
+    // If the API call fails, scanBranch remains 'main' (the safe fallback)
+    echo "❌ ERROR: Failed to retrieve default branch via API. Using heuristic default: ${scanBranch}"
+}
                         // --- Get Current Commit ---
                         def bitbucketRepoUrl = "${params.BITBUCKET_SERVER_URL}/scm/${repoPath}.git"
                         
@@ -154,7 +189,7 @@ pipeline {
                                 parameters: [
                                     string(name: 'REPO_PATH', value: repoPath),
                                     string(name: 'BITBUCKET_SERVER_URL', value: params.BITBUCKET_SERVER_URL),
-                                    string(name: 'GIT_BRANCH', value: params.GIT_SCAN_BRANCH),
+                                    string(name: 'GIT_BRANCH', value: scanBranch),
                                     string(name: 'FROGBOT_VERSION', value: params.FROGBOT_VERSION)
                                 ],
                                 wait: false 
