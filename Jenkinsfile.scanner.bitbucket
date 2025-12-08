@@ -63,6 +63,8 @@ pipeline {
                         ).trim()
 
                         echo "Latest remote commit ID is: ${env.LAST_GIT_COMMIT}"
+                        echo "Branch name is: ${env.JF_GIT_BASE_BRANCH}"
+
                         def shortCommitId = env.LAST_GIT_COMMIT.substring(0, 7)
                         def finalResultsFileName = "${env.RESULTS_FILE_BASE}-${shortCommitId}.log"
 
