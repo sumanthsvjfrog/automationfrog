@@ -80,7 +80,6 @@ pipeline {
                     
                     // --- Define File Paths and Variables ---
                     def repoLines = readFile(env.REPO_LIST_FILE).trim().split('\\r?\\n')
-                    //sum1
                     def uniqueStateFileName
                     def uniqueStateFilePath
                     def currentLatestCommit
@@ -96,50 +95,45 @@ pipeline {
                         def repoPath = repoPathFull.trim()
                         if (repoPath == '') continue
 
-                        //sum1
                         def (projectKey, repoSlug) = repoPath.split('/')
                         uniqueStateFileName = "${repoPath.replace('/', '-')}.txt"
                         uniqueStateFilePath = "${env.JFROG_STATE_PREFIX}${uniqueStateFileName}"
 
 
-                        //sum1
                         def scanBranch = 'main'
                         def defaultBranchApiUrl = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${projectKey}/repos/${repoSlug}/branches/default"
                         def authenticatedApiUrl = defaultBranchApiUrl.replaceFirst('://', "://${BB_USER}:${BB_PAT}@")
-try {
-        // FIX: Inject credentials as environment variables for the shell
-        // This is safer than interpolating them directly into the curl string.
-        withEnv([
-            "BITBUCKET_USERNAME=${BB_USER}", 
-            "BITBUCKET_TOKEN=${BB_PAT}"
-        ]) {
-            def jsonResponse = sh(
-                returnStdout: true, 
-                // Use environment variables for authentication
-                script: """
-                    curl -s -u "\$BITBUCKET_USERNAME:\$BITBUCKET_TOKEN" \
-                    "${defaultBranchApiUrl}"
-                """
-            ).trim()
-            
-            // ... (rest of the jq logic remains the same) ...
-            
-            def defaultBranch = sh(
-                returnStdout: true,
-                script: "echo '${jsonResponse}' | /usr/bin/jq -r '.displayId'"
-            ).trim()
 
-            if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
-                scanBranch = defaultBranch 
-                echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
-            } else {
-                echo "⚠️ API returned empty or failed parsing. Using heuristic default: ${scanBranch}"
+                    try {
+                    withEnv([
+                        "BITBUCKET_USERNAME=${BB_USER}", 
+                        "BITBUCKET_TOKEN=${BB_PAT}"
+                    ]) {
+                        def jsonResponse = sh(
+                        returnStdout: true, 
+                        script: """
+                            curl -s -u "\$BITBUCKET_USERNAME:\$BITBUCKET_TOKEN" \
+                            "${defaultBranchApiUrl}"
+                        """
+                    ).trim()
+    
+            
+                def defaultBranch = sh(
+                    returnStdout: true,
+                    script: "echo '${jsonResponse}' | /usr/bin/jq -r '.displayId'"
+                ).trim()
+
+                if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
+                    scanBranch = defaultBranch 
+                    echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
+                } else {
+                    echo "⚠️ API returned empty or failed parsing. Using heuristic default: ${scanBranch}"
+                }
             }
-        } // End withEnv
 
-    } catch (e) {
-        echo "❌ ERROR: Failed to retrieve default branch via API (Check Network/Token Scope). Using heuristic default: ${scanBranch}"
-    }
+         } catch (e) {
+            echo "❌ ERROR: Failed to retrieve default branch via API (Check Network/Token Scope). Using heuristic default: ${scanBranch}"
+        }
                         // --- Get Current Commit ---
                         def bitbucketRepoUrl = "${params.BITBUCKET_SERVER_URL}/scm/${repoPath}.git"
                         
