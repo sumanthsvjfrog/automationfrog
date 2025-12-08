@@ -106,31 +106,40 @@ pipeline {
                         def scanBranch = 'main'
                         def defaultBranchApiUrl = "${params.BITBUCKET_SERVER_URL}/rest/api/1.0/projects/${projectKey}/repos/${repoSlug}/branches/default"
                         def authenticatedApiUrl = defaultBranchApiUrl.replaceFirst('://', "://${BB_USER}:${BB_PAT}@")
-                        try {
-                        // Execute CURL and JQ in a single sh block and capture the final output into Groovy
-                          def jsonResponse = sh(
-                            returnStdout: true, 
-                            script: "curl -s ${authenticatedApiUrl}"
-                            ).trim()
-    
-    // Now, run the JQ command using the captured Groovy variable and capture the final branch name
-    def defaultBranch = sh(
-        returnStdout: true,
-        script: "echo '${jsonResponse}' | /usr/bin/jq -r '.displayId'"
-    ).trim()
+try {
+        // FIX: Inject credentials as environment variables for the shell
+        // This is safer than interpolating them directly into the curl string.
+        withEnv([
+            "BITBUCKET_USERNAME=${BB_USER}", 
+            "BITBUCKET_TOKEN=${BB_PAT}"
+        ]) {
+            def jsonResponse = sh(
+                returnStdout: true, 
+                // Use environment variables for authentication
+                script: """
+                    curl -s -u "\$BITBUCKET_USERNAME:\$BITBUCKET_TOKEN" \
+                    "${defaultBranchApiUrl}"
+                """
+            ).trim()
+            
+            // ... (rest of the jq logic remains the same) ...
+            
+            def defaultBranch = sh(
+                returnStdout: true,
+                script: "echo '${jsonResponse}' | /usr/bin/jq -r '.displayId'"
+            ).trim()
 
-    // Assign the cleaned branch name to the Groovy variable
-    if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
-        scanBranch = defaultBranch 
-        echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
-    } else {
-        echo "⚠️ API returned empty. Using heuristic default: ${scanBranch}"
+            if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
+                scanBranch = defaultBranch 
+                echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
+            } else {
+                echo "⚠️ API returned empty or failed parsing. Using heuristic default: ${scanBranch}"
+            }
+        } // End withEnv
+
+    } catch (e) {
+        echo "❌ ERROR: Failed to retrieve default branch via API (Check Network/Token Scope). Using heuristic default: ${scanBranch}"
     }
-
-} catch (e) {
-    // If the API call fails, scanBranch remains 'main' (the safe fallback)
-    echo "❌ ERROR: Failed to retrieve default branch via API. Using heuristic default: ${scanBranch}"
-}
                         // --- Get Current Commit ---
                         def bitbucketRepoUrl = "${params.BITBUCKET_SERVER_URL}/scm/${repoPath}.git"
                         
