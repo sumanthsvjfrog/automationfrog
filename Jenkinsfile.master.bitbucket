@@ -125,14 +125,14 @@ pipeline {
 
                 if (defaultBranch && defaultBranch != "null" && defaultBranch != "") {
                     scanBranch = defaultBranch 
-                    echo "ℹ️ Determined default branch for ${repoPath}: ${scanBranch}"
+                    echo "Determined default branch for ${repoPath}: ${scanBranch}"
                 } else {
-                    echo "⚠️ API returned empty or failed parsing. Using heuristic default: ${scanBranch}"
+                    echo "API returned empty or failed parsing. Using heuristic default: ${scanBranch}"
                 }
             }
 
          } catch (e) {
-            echo "❌ ERROR: Failed to retrieve default branch via API (Check Network/Token Scope). Using heuristic default: ${scanBranch}"
+            echo "ERROR: Failed to retrieve default branch via API (Check Network/Token Scope). Using heuristic default: ${scanBranch}"
         }
                         // --- Get Current Commit ---
                         def bitbucketRepoUrl = "${params.BITBUCKET_SERVER_URL}/scm/${repoPath}.git"
