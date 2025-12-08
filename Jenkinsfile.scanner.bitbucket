@@ -180,5 +180,11 @@ pipeline {
             }
             }
         }
+        always {
+            script {
+            echo "Cleaning up workspace directory..."
+            cleanWs(deleteDirs: true) 
+            }
+        }
     }
 }
