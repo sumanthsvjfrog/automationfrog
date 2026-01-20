@@ -13,12 +13,12 @@ pipeline {
     parameters {
         string(
             name: 'BITBUCKET_SERVER_URL', 
-            defaultValue: 'http://172.18.107.112:7990', 
+            defaultValue: 'http://172.18.105.234:7990', 
             description: 'Base URL for Bitbucket Server/Data Center (e.g., http://host:port).'
         )
         string(
             name: 'BITBUCKET_PROJECT_KEY', 
-            defaultValue: 'DEM', 
+            defaultValue: 'SUM', 
             description: 'The Project Key (e.g., DEM) containing the repositories to scan.'
         )
 //        string(
