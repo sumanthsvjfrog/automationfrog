@@ -100,7 +100,13 @@ pipeline {
                         echo "installfrog=\$installfrog"
 
                         if [ \$installfrog = yes ];then
-                            curl -fLg "https://releases.jfrog.io/artifactory/frogbot/v2/\${env.FROGBOT_VERSION}/getFrogbot.sh" | sh -s \${env.FROGBOT_VERSION}
+                            curl -fLg -o getFrogbot.sh "https://releases.jfrog.io/artifactory/frogbot/v2/${env.FROGBOT_VERSION}/getFrogbot.sh" 
+                            chmod +x getFrogbot.sh
+                            sh ./getFrogbot.sh ${FROGBOT_VERSION}
+                            if [ ! -f frogbot ]; then
+                            	echo "ERROR: Frogbot binary not created"
+                                exit 1
+                            fi
                             chmod +x frogbot
                             sudo mv -f frogbot /usr/bin/frogbot
                             echo "Frogbot v\${REQUIRED_VERSION} installed successfully."
